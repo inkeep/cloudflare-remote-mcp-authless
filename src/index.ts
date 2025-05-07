@@ -2,6 +2,10 @@ import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import OpenAI from "openai";
+import { openai } from '@ai-sdk/openai';
+import { generateObject } from 'ai';
+import { zodResponseFormat } from "openai/helpers/zod.mjs";
+
 
 // Environment variables need to be defined in the Cloudflare dashboard or via the CLI (secrets)
 // Define environment variable interface for type safety
@@ -14,16 +18,29 @@ interface InkeepEnv extends Env {
 }
 
 // Interface matching the Python response structure
-interface InkeepRAGDocument {
-	type: string;
-	source: {
-		type: string;
-	};
-	title?: string;
-	context?: string;
-	record_type?: string;
-	url?: string;
-}
+const InkeepRAGResponseSchema = z.object({
+	content: z.array(
+		z.object({
+			type: z.literal('document'),
+			record_type: z.string().optional().nullable(),
+			url: z.string().optional().nullable(),
+			title: z.string().optional().nullable(),
+			source: z.object({
+				type: z.string(),
+				content: z.array(z.object({
+					type: z.string(),
+					text: z.string(),
+					media_type: z.string().optional().nullable(),
+					data: z.string().optional().nullable(),
+				}))
+			}),
+			context: z.string().optional().nullable(),
+		})
+	)
+});
+
+
+type InkeepRAGResponse = z.infer<typeof InkeepRAGResponseSchema>;
 
 // Define our MCP agent with tools
 export class MyMCP extends McpAgent {
@@ -76,36 +93,34 @@ export class MyMCP extends McpAgent {
 						apiKey: apiKey,
 					});
 
-					const response = await openai.chat.completions.create({
-						model: apiModel,
+
+
+					const response = await openai.beta.chat.completions.parse({
+						model: "inkeep-rag",
 						messages: [{ role: "user", content: query }],
-					});
+						response_format: zodResponseFormat(InkeepRAGResponseSchema, "InkeepRAGResponseSchema"),
+					  });
 
-					// Parse the response to extract documents
-					const inkeepResponse = response.choices?.[0]?.message?.content;
+					  const content = response.choices[0].message.parsed;
+					  return content;
+						// try {
+						// 	// Try to parse the content if it's a JSON string
+							
 
-					if (inkeepResponse) {
-						try {
-							// Try to parse the content if it's a JSON string
-							const parsedContent: { content: InkeepRAGDocument[] } =
-								typeof inkeepResponse === "string"
-									? JSON.parse(inkeepResponse)
-									: inkeepResponse;
+						// 	if (Array.isArray(parsedContent.content)) {
+						// 		// Transform InkeepRAGDocuments to the format expected by MCP Server
 
-							if (Array.isArray(parsedContent.content)) {
-								// Transform InkeepRAGDocuments to the format expected by MCP Server
+						// 		return parsedContent;
+						// 	}
 
-								return parsedContent;
-							}
-
-							console.log("No content array found in parsed response");
-						} catch (parseError) {
-							console.error("Error parsing Inkeep response:", parseError);
-						}
-					}
+						// 	console.log("No content array found in parsed response");
+						// } catch (parseError) {
+						// 	console.error("Error parsing Inkeep response:", parseError);
+						// }
+					// }
 
 					// If we can't extract documents, return empty array
-					return { content: [] };
+					// return { content: [] };
 				} catch (error) {
 					console.error("Error retrieving product docs:", error);
 					return { content: [] };
@@ -139,12 +154,9 @@ export class MyMCP extends McpAgent {
 						apiKey: apiKey,
 					});
 
-					const systemMessage = `You are an AI assistant knowledgeable about ${productName}.`;
-
 					const response = await openai.chat.completions.create({
 						model: apiModel,
 						messages: [
-							{ role: "system", content: systemMessage },
 							{ role: "user", content: question },
 						],
 					});
