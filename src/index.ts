@@ -18,23 +18,11 @@ interface InkeepRAGDocument {
 	type: string;
 	source: {
 		type: string;
-		media_type?: string;
-		data?: string;
-		content?: Array<{ type: string; text: string }>;
 	};
 	title?: string;
 	context?: string;
 	record_type?: string;
 	url?: string;
-}
-
-// OpenAI-like response interface
-interface APIResponse {
-	choices?: Array<{
-		message?: {
-			content?: unknown;
-		};
-	}>;
 }
 
 // Define our MCP agent with tools
@@ -99,23 +87,15 @@ export class MyMCP extends McpAgent {
 					if (inkeepResponse) {
 						try {
 							// Try to parse the content if it's a JSON string
-							const parsedContent =
+							const parsedContent: { content: InkeepRAGDocument[] } =
 								typeof inkeepResponse === "string"
 									? JSON.parse(inkeepResponse)
 									: inkeepResponse;
 
 							if (Array.isArray(parsedContent.content)) {
 								// Transform InkeepRAGDocuments to the format expected by MCP Server
-								const formattedContent = (
-									parsedContent.content as InkeepRAGDocument[]
-								).map((doc) => {
-									return {
-										type: "text" as const,
-										text: `${doc.title ? `${doc.title}\n\n` : ""}${doc.source.data || ""}${doc.url ? `\n\nSource: ${doc.url}` : ""}`,
-									};
-								});
 
-								return { content: formattedContent };
+								return parsedContent;
 							}
 
 							console.log("No content array found in parsed response");
