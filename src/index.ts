@@ -18,28 +18,22 @@ interface InkeepEnv extends Env {
 }
 
 // Interface matching the Python response structure
-const InkeepRAGResponseSchema = z.object({
-	content: z.array(
-		z.object({
-			type: z.literal('document'),
-			record_type: z.string().optional().nullable(),
-			url: z.string().optional().nullable(),
-			title: z.string().optional().nullable(),
-			source: z.object({
-				type: z.string(),
-				content: z.array(z.object({
-					type: z.string(),
-					text: z.string(),
-					media_type: z.string().optional().nullable(),
-					data: z.string().optional().nullable(),
-				}))
-			}),
-			context: z.string().optional().nullable(),
-		})
-	)
+const InkeepRAGDocumentSchema = z.object({
+	// anthropic fields citation types
+	type: z.string(),
+	source: z.record(z.any()),
+	title: z.string().optional().nullable(),
+	context: z.string().optional().nullable(),
+	// inkeep specific fields
+	record_type: z.string().optional().nullable(),
+	url: z.string().optional().nullable(),
 });
 
+const InkeepRAGResponseSchema = z.object({
+	content: z.array(InkeepRAGDocumentSchema),
+});
 
+type InkeepRAGDocument = z.infer<typeof InkeepRAGDocumentSchema>;
 type InkeepRAGResponse = z.infer<typeof InkeepRAGResponseSchema>;
 
 // Define our MCP agent with tools
@@ -74,7 +68,7 @@ export class MyMCP extends McpAgent {
 			{
 				query: z.string().describe("The search query to find relevant documentation"),
 			},
-			async (args) => {
+			async (args, extra) => {
 				try {
 					const query = args.query;
 
@@ -93,34 +87,43 @@ export class MyMCP extends McpAgent {
 						apiKey: apiKey,
 					});
 
-
-
 					const response = await openai.beta.chat.completions.parse({
 						model: "inkeep-rag",
 						messages: [{ role: "user", content: query }],
 						response_format: zodResponseFormat(InkeepRAGResponseSchema, "InkeepRAGResponseSchema"),
-					  });
+					});
 
-					  const content = response.choices[0].message.parsed;
-					  return content;
-						// try {
-						// 	// Try to parse the content if it's a JSON string
-							
+					// Transform InkeepRAGDocuments to MCP-compatible format
+					const formattedContent = response.choices[0].message.parsed?.content.map(doc => {
+						// Extract text from the source when possible
+						let text = "";
 
-						// 	if (Array.isArray(parsedContent.content)) {
-						// 		// Transform InkeepRAGDocuments to the format expected by MCP Server
+						if (typeof doc.source === "object" && doc.source) {
+							// Try to extract text from common source formats
+							if (Array.isArray(doc.source.content) && doc.source.content.length > 0) {
+								// Join all text content if available
+								text = doc.source.content
+									.filter(item => item.text)
+									.map(item => item.text)
+									.join("\n");
+							} else if (typeof doc.source.text === "string") {
+								text = doc.source.text;
+							} else {
+								// Fallback to stringifying the source
+								text = JSON.stringify(doc.source);
+							}
+						} else {
+							text = JSON.stringify(doc.source);
+						}
 
-						// 		return parsedContent;
-						// 	}
+						// Return a properly formatted text item for MCP
+						return {
+							type: "text" as const,
+							text: text || "No content available",
+						};
+					}) || [];
 
-						// 	console.log("No content array found in parsed response");
-						// } catch (parseError) {
-						// 	console.error("Error parsing Inkeep response:", parseError);
-						// }
-					// }
-
-					// If we can't extract documents, return empty array
-					// return { content: [] };
+					return { content: formattedContent };
 				} catch (error) {
 					console.error("Error retrieving product docs:", error);
 					return { content: [] };
@@ -134,7 +137,7 @@ export class MyMCP extends McpAgent {
 			{
 				question: z.string().describe("The specific question about the product"),
 			},
-			async (args) => {
+			async (args, extra) => {
 				try {
 					const question = args.question;
 
