@@ -75,7 +75,7 @@ export class MyMCP extends McpAgent {
 					// Retrieve settings from environment variables
 					const apiBaseUrl = MyMCP.env.INKEEP_API_BASE_URL || "https://api.inkeep.com/v1";
 					const apiKey = MyMCP.env.INKEEP_API_KEY;
-					const apiModel = MyMCP.env.INKEEP_API_MODEL || "inkeep-rag";
+					const apiModel = "inkeep-rag";
 
 					if (!apiKey) {
 						console.error("Inkeep API key not provided");
@@ -144,7 +144,7 @@ export class MyMCP extends McpAgent {
 					// Retrieve settings from environment variables
 					const apiBaseUrl = MyMCP.env.INKEEP_API_BASE_URL || "https://api.inkeep.com/v1";
 					const apiKey = MyMCP.env.INKEEP_API_KEY;
-					const apiModel = MyMCP.env.INKEEP_API_MODEL || "inkeep-qa-expert";
+					const apiModel = "inkeep-qa-expert";
 
 					if (!apiKey) {
 						console.error("Inkeep API key not provided");
