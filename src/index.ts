@@ -12,7 +12,6 @@ import { zodResponseFormat } from "openai/helpers/zod.mjs";
 interface InkeepEnv extends Env {
 	INKEEP_API_BASE_URL: string;
 	INKEEP_API_KEY: string;
-	INKEEP_API_MODEL: string;
 	INKEEP_PRODUCT_SLUG: string;
 	INKEEP_PRODUCT_NAME: string;
 }
