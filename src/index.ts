@@ -2,8 +2,6 @@ import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import OpenAI from "openai";
-import { openai } from '@ai-sdk/openai';
-import { generateObject } from 'ai';
 import { zodResponseFormat } from "openai/helpers/zod.mjs";
 
 
@@ -16,24 +14,21 @@ interface InkeepEnv extends Env {
 	INKEEP_PRODUCT_NAME: string;
 }
 
-// Interface matching the Python response structure
+// https://docs.inkeep.com/ai-api/rag-mode/openai-sdk
 const InkeepRAGDocumentSchema = z.object({
 	// anthropic fields citation types
 	type: z.string(),
 	source: z.record(z.any()),
-	title: z.string().optional().nullable(),
-	context: z.string().optional().nullable(),
+	title: z.string().optional(),
+	context: z.string().optional(),
 	// inkeep specific fields
-	record_type: z.string().optional().nullable(),
-	url: z.string().optional().nullable(),
-});
+	record_type: z.string().optional(),
+	url:  z.string().optional(),
+}).passthrough();
 
 const InkeepRAGResponseSchema = z.object({
 	content: z.array(InkeepRAGDocumentSchema),
-});
-
-type InkeepRAGDocument = z.infer<typeof InkeepRAGDocumentSchema>;
-type InkeepRAGResponse = z.infer<typeof InkeepRAGResponseSchema>;
+}).passthrough();
 
 // Define our MCP agent with tools
 export class MyMCP extends McpAgent {
@@ -74,7 +69,6 @@ export class MyMCP extends McpAgent {
 					// Retrieve settings from environment variables
 					const apiBaseUrl = MyMCP.env.INKEEP_API_BASE_URL || "https://api.inkeep.com/v1";
 					const apiKey = MyMCP.env.INKEEP_API_KEY;
-					const apiModel = "inkeep-rag";
 
 					if (!apiKey) {
 						console.error("Inkeep API key not provided");
@@ -92,37 +86,20 @@ export class MyMCP extends McpAgent {
 						response_format: zodResponseFormat(InkeepRAGResponseSchema, "InkeepRAGResponseSchema"),
 					});
 
-					// Transform InkeepRAGDocuments to MCP-compatible format
-					const formattedContent = response.choices[0].message.parsed?.content.map(doc => {
-						// Extract text from the source when possible
-						let text = "";
-
-						if (typeof doc.source === "object" && doc.source) {
-							// Try to extract text from common source formats
-							if (Array.isArray(doc.source.content) && doc.source.content.length > 0) {
-								// Join all text content if available
-								text = doc.source.content
-									.filter(item => item.text)
-									.map(item => item.text)
-									.join("\n");
-							} else if (typeof doc.source.text === "string") {
-								text = doc.source.text;
-							} else {
-								// Fallback to stringifying the source
-								text = JSON.stringify(doc.source);
-							}
-						} else {
-							text = JSON.stringify(doc.source);
-						}
-
-						// Return a properly formatted text item for MCP
+					const parsedResponse = response.choices[0].message.parsed
+					if (parsedResponse) {
 						return {
-							type: "text" as const,
-							text: text || "No content available",
+							content: [
+								{
+									type: "text" as const,
+									text: JSON.stringify(parsedResponse),
+								},
+							],
 						};
-					}) || [];
+					}
 
-					return { content: formattedContent };
+					// If no response, return empty array
+					return { content: [] };
 				} catch (error) {
 					console.error("Error retrieving product docs:", error);
 					return { content: [] };
@@ -143,21 +120,20 @@ export class MyMCP extends McpAgent {
 					// Retrieve settings from environment variables
 					const apiBaseUrl = MyMCP.env.INKEEP_API_BASE_URL || "https://api.inkeep.com/v1";
 					const apiKey = MyMCP.env.INKEEP_API_KEY;
-					const apiModel = "inkeep-qa-expert";
 
 					if (!apiKey) {
 						console.error("Inkeep API key not provided");
 						return { content: [] };
 					}
 
-					// Create OpenAI client fromSDK with Inkeep API settings
+					// Create OpenAI client with Inkeep API settings
 					const openai = new OpenAI({
 						baseURL: apiBaseUrl,
 						apiKey: apiKey,
 					});
-
+					
 					const response = await openai.chat.completions.create({
-						model: apiModel,
+						model: "inkeep-qa-expert",
 						messages: [
 							{ role: "user", content: question },
 						],
